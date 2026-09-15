@@ -46,16 +46,37 @@ def review_purchase(
     try:
         graph = build_graph(db)
 
-        result = graph.invoke({
+        graph_input = {
+            "scenario": request.scenario,
             "product_sku": request.product_sku,
-            "recommended_quantity": request.recommended_quantity,
             "reason": request.reason,
-        })
+
+            # Scenario 1
+            "recommended_quantity": request.recommended_quantity,
+
+            # Scenario 2
+            "purchase_order_quantity": request.purchase_order_quantity,
+            "supplier_name": request.supplier_name,
+            "supplier_available_quantity": (
+                request.supplier_available_quantity
+            ),
+
+            # Scenario 3
+            "previous_forecast": request.previous_forecast,
+            "new_forecast": request.new_forecast,
+            "current_inventory": request.current_inventory,
+            "existing_purchase_order": (
+                request.existing_purchase_order
+            ),
+
+            # Scenario 4
+            "budget": request.budget,
+            "storage_capacity": request.storage_capacity,
+        }
+
+        result = graph.invoke(graph_input)
 
         return result["final_result"]
 
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=str(exc)
-        )
+        raise HTTPException(status_code=500, detail=str(exc))

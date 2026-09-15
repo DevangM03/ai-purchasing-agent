@@ -351,6 +351,18 @@ product_sku
 recommended_quantity
 reason
 
+purchase_order_quantity
+supplier_name
+supplier_available_quantity
+
+previous_forecast
+new_forecast
+current_inventory
+existing_purchase_order
+
+budget
+storage_capacity
+
 inventory
 suppliers
 purchase_orders
@@ -546,7 +558,7 @@ quantity <= supplier.available_quantity
 ## Storage Capacity
 
 ```text
-current_inventory + quantity
+current_inventory + incoming_quantity + quantity
 <= storage_capacity
 ```
 
@@ -641,7 +653,7 @@ Budget-limited quantity
 
 ```text
 Storage-limited quantity
-= storage capacity - current inventory
+= storage capacity - current inventory - incoming quantity
 ```
 
 ```text

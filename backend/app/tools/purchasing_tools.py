@@ -36,11 +36,15 @@ def validate_purchase_action(
     db: Session,
     product_sku: str,
     supplier_id: int,
-    quantity: int
+    quantity: int,
+    budget_override: float | None = None,
+    storage_override: int | None = None,
 ):
     return validate_purchase(
-        db,
-        product_sku,
-        supplier_id,
-        quantity
+        db=db,
+        product_sku=product_sku,
+        supplier_id=supplier_id,
+        quantity=quantity,
+        budget_override=budget_override,
+        storage_override=storage_override,
     )

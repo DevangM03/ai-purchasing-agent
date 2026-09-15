@@ -7,6 +7,7 @@ import "./index.css";
 
 const scenarios = {
   recommendation: {
+    id: "recommendation",
     name: "Purchase Recommendation Review",
     description:
       "Review an AI-generated purchase recommendation against inventory, suppliers, budget, storage, and demand.",
@@ -15,7 +16,9 @@ const scenarios = {
     reason:
       "Forecast indicates increased demand and additional inventory is recommended.",
   },
+
   supplier: {
+    id: "supplier",
     name: "Supplier Cannot Fulfil Purchase",
     description:
       "Evaluate what to do when a supplier cannot provide the full requested quantity.",
@@ -24,7 +27,9 @@ const scenarios = {
     reason:
       "Supplier capacity may be lower than the requested purchase quantity.",
   },
+
   demand: {
+    id: "demand",
     name: "Demand / Forecast Changed",
     description:
       "Re-evaluate purchasing when demand increases and existing inventory may no longer be sufficient.",
@@ -33,7 +38,9 @@ const scenarios = {
     reason:
       "Recent sales increased and the forecast now requires additional inventory.",
   },
+
   constraint: {
+    id: "constraint",
     name: "Purchasing Constraint",
     description:
       "Determine the safest action when a purchase recommendation conflicts with purchasing constraints.",
@@ -54,12 +61,23 @@ function App() {
 
   const scenario = scenarios[selectedScenario];
 
+  const handleScenarioChange = (scenarioId) => {
+    setSelectedScenario(scenarioId);
+    setResult(null);
+    setError("");
+  };
+
   const handleReview = async (formData) => {
     setLoading(true);
     setError("");
     setResult(null);
 
     try {
+      const requestData = {
+        ...formData,
+        scenario: selectedScenario,
+      };
+
       const response = await fetch(
         "http://localhost:8000/api/purchase/review",
         {
@@ -68,7 +86,7 @@ function App() {
             "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(requestData),
         }
       );
 
@@ -93,7 +111,9 @@ function App() {
       <header className="header">
         <div>
           <div className="eyebrow">AI PROCUREMENT SYSTEM</div>
+
           <h1>AI Purchasing Agent</h1>
+
           <p>
             Intelligent purchase decisions with deterministic
             validation and recovery.
@@ -110,13 +130,17 @@ function App() {
         <ScenarioSelector
           scenarios={scenarios}
           selectedScenario={selectedScenario}
-          onSelect={setSelectedScenario}
+          onSelect={handleScenarioChange}
         />
 
         <section className="scenario-header">
           <div>
-            <span className="section-label">CURRENT SCENARIO</span>
+            <span className="section-label">
+              CURRENT SCENARIO
+            </span>
+
             <h2>{scenario.name}</h2>
+
             <p>{scenario.description}</p>
           </div>
         </section>
@@ -130,6 +154,7 @@ function App() {
         {error && (
           <div className="error-card">
             <strong>Request failed</strong>
+
             <p>{error}</p>
           </div>
         )}
@@ -137,8 +162,12 @@ function App() {
         {loading && (
           <div className="loading-card">
             <div className="spinner"></div>
+
             <div>
-              <strong>Agent is reviewing the purchase...</strong>
+              <strong>
+                Agent is reviewing the purchase...
+              </strong>
+
               <p>
                 Investigating inventory, suppliers, demand,
                 purchase orders and constraints.
@@ -154,11 +183,14 @@ function App() {
                 <span className="section-label">
                   AGENT RESULT
                 </span>
+
                 <h2>Purchase Review Complete</h2>
               </div>
 
               <div
-                className={`decision-badge ${result.decision?.decision?.toLowerCase()}`}
+                className={`decision-badge ${
+                  result.decision?.decision?.toLowerCase() || ""
+                }`}
               >
                 {result.decision?.decision}
               </div>
@@ -166,6 +198,7 @@ function App() {
 
             <div className="result-grid">
               <DecisionCard result={result} />
+
               <EvidencePanel result={result} />
             </div>
           </div>
