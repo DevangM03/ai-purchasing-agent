@@ -2,103 +2,59 @@
 
 An AI-powered procurement decision system built with **React, FastAPI, LangGraph, Groq, SQLAlchemy, and SQLite**.
 
-The system evaluates purchasing recommendations against real procurement constraints, validates proposed actions deterministically, recovers from infeasible recommendations, revalidates recovered actions, and executes valid purchase orders.
+The system evaluates purchasing recommendations against inventory, demand, open purchase orders, supplier constraints, budget, and storage capacity. It uses an LLM for purchasing reasoning, but keeps financial and operational constraints deterministic.
 
-The project focuses on a complete end-to-end **Purchase Recommendation Review** workflow while also demonstrating three additional purchasing scenarios.
-
----
-
-# 1. Overview
-
-The AI Purchasing Agent is designed to help a buyer evaluate purchasing decisions rather than blindly execute a recommendation.
-
-A recommendation can be incorrect or infeasible.
-
-For example:
+The core workflow is:
 
 ```text
-Recommended purchase = 800 units
-Actual additional requirement = 600 units
-Available budget = ₹5,000
-Supplier price = ₹10/unit
-```
-
-The agent determines that only 600 units are actually required.
-
-It then validates the proposed purchase:
-
-```text
-600 × ₹10 = ₹6,000
-```
-
-Since the available budget is only:
-
-```text
-₹5,000
-```
-
-the initial action fails validation.
-
-The recovery stage finds the largest feasible purchase:
-
-```text
-₹5,000 / ₹10 = 500 units
-```
-
-The recovered action is then validated again before execution.
-
-Final result:
-
-```text
-Decision: MODIFY
-Purchase: 500 units
-Cost: ₹5,000
-Remaining shortfall: 100 units
-```
-
-This demonstrates the core design principle:
-
-```text
-LLM Reasoning
-      ↓
+Investigate
+    ↓
+Analyze
+    ↓
+AI Decision
+    ↓
 Deterministic Validation
-      ↓
+    ↓
 Recovery
-      ↓
+    ↓
 Revalidation
-      ↓
-Execution
+    ↓
+Purchase Order Execution
+    ↓
+Final Result
 ```
+
+The primary end-to-end scenario is **Purchase Recommendation Review**, with three additional purchasing scenarios included for evaluation.
 
 ---
 
-# 2. Key Features
+## Features
 
 * LLM-based purchasing reasoning using Groq
 * LangGraph stateful workflow
-* Deterministic purchasing validation
 * Inventory and demand analysis
+* Open purchase-order investigation
 * Supplier comparison
-* Purchase-order investigation
+* Supplier MOQ validation
+* Supplier-capacity validation
 * Budget validation
 * Storage-capacity validation
-* Supplier-capacity validation
-* MOQ validation
-* Recovery from invalid purchasing actions
+* Recovery from infeasible purchasing actions
 * Revalidation of recovered actions
+* Structured purchasing decisions
+* Explainable validation and recovery evidence
 * SQLite-backed procurement data
-* React frontend for scenario testing
 * FastAPI backend
-* Automated validation tests
+* React/Vite frontend
+* Automated deterministic validation tests
 * Four purchasing scenarios
-* Explainable final decisions
 * No LLM-controlled database mutation
 
 ---
 
-# 3. Architecture
+# Architecture
 
-The high-level architecture is:
+The system separates **LLM reasoning** from **deterministic validation and execution**.
 
 ```text
                          USER
@@ -148,17 +104,13 @@ The high-level architecture is:
                  └────────────┘
 ```
 
-For the detailed architecture, see:
-
-```text
-architecture.md
-```
+The detailed architecture is documented in [`architecture.md`](architecture.md).
 
 ---
 
-# 4. Agent Workflow
+# Agent Workflow
 
-The current LangGraph implementation uses a linear sequence of nodes:
+The current LangGraph implementation uses a **linear sequence of nodes**:
 
 ```text
 Investigate
@@ -178,7 +130,7 @@ Execute
 Final
 ```
 
-## Important implementation detail
+### Important implementation detail
 
 Recovery and revalidation are explicit nodes in the current graph.
 
@@ -195,9 +147,9 @@ Instead:
 Validation → Recovery → Revalidation → Execute
 ```
 
-The recovery node examines the validation result and determines whether recovery is necessary.
+The Recovery node examines the validation result and determines whether recovery is necessary.
 
-This reflects the current implementation in:
+Implementation:
 
 ```text
 backend/app/agent/graph.py
@@ -205,246 +157,102 @@ backend/app/agent/graph.py
 
 ---
 
-# 5. Scenarios
+# 1. Investigation
 
-The frontend provides four scenarios.
+The investigation stage gathers the procurement context required for decision making.
 
-## Scenario 1 — Purchase Recommendation Review
+It uses:
 
-The buyer receives a recommendation to purchase 800 units.
+```text
+backend/app/tools/purchasing_tools.py
+```
 
 The agent investigates:
 
 * Current inventory
 * Expected demand
+* Forecast period
 * Existing purchase orders
 * Supplier availability
 * Supplier MOQ
 * Supplier pricing
+* Supplier lead time
+* Supplier reliability
 * Storage capacity
-* Budget
+* Purchasing budget
 
-### Seeded data
+The information is stored in the LangGraph state and passed to subsequent nodes.
+
+---
+
+# 2. Analysis
+
+The analysis stage determines the actual inventory requirement instead of blindly accepting the original recommendation.
+
+For example:
 
 ```text
 Current inventory = 300
+Existing incoming PO = 100
 Expected daily demand = 100
 Forecast period = 10 days
-Required demand = 1000
-Existing incoming PO = 100
-
-Supplier A:
-    MOQ = 100
-    Price = ₹10
-    Availability = 800
-    Lead time = 3 days
-
-Supplier B:
-    MOQ = 200
-    Price = ₹9.50
-    Availability = 400
-    Lead time = 5 days
-
-Budget = ₹5,000
-Storage capacity = 1,200
 ```
 
-The actual requirement is:
+Required demand:
+
+```text
+100 × 10 = 1000 units
+```
+
+Additional requirement:
 
 ```text
 1000 - 300 - 100
 = 600 units
 ```
 
-The initial purchase would therefore be:
-
-```text
-600 × ₹10
-= ₹6,000
-```
-
-Validation fails because:
-
-```text
-₹6,000 > ₹5,000
-```
-
-Recovery finds:
-
-```text
-₹5,000 / ₹10
-= 500 units
-```
-
-The recovered action passes all validation checks.
-
-### Final result
-
-```text
-Decision = MODIFY
-
-Original recommendation = 800
-Required additional = 600
-Final purchase = 500
-Remaining shortfall = 100
-Total cost = ₹5,000
-Supplier = Supplier A
-```
+This calculated requirement is then used when evaluating the purchasing recommendation.
 
 ---
 
-# 6. Scenario 2 — Supplier Cannot Fulfil Purchase
+# 3. AI Decision
 
-The original purchase order requests:
+The Decision node uses the Groq LLM to reason over the investigated procurement context.
 
-```text
-500 units
-```
+The model can:
 
-The original supplier can provide only:
+* Interpret procurement context
+* Compare purchasing options
+* Determine whether a recommendation should be accepted or modified
+* Explain the decision
+* Identify risks
 
-```text
-250 units
-```
-
-The agent determines that the remaining:
+Possible decisions include:
 
 ```text
-500 - 250
-= 250 units
+ACCEPT
+MODIFY
+REJECT
+INVESTIGATE
 ```
 
-can be sourced from another supplier.
-
-Supplier B can provide the remaining quantity.
-
-### Result
+The LLM produces a structured purchasing decision containing information such as:
 
 ```text
-Decision = MODIFY
-
-Original PO = 500
-Original supplier availability = 250
-Alternate supplier quantity = 250
-Supplier = Supplier B
-Cost = ₹2,375
+decision
+quantity
+supplier
+reasoning
+risk
 ```
 
-The alternate purchase is validated before execution.
+The LLM does **not** directly create purchase orders or mutate the database.
 
 ---
 
-# 7. Scenario 3 — Demand / Forecast Changed
+# 4. Deterministic Validation
 
-The original forecast is:
-
-```text
-1,000 units
-```
-
-The updated forecast becomes:
-
-```text
-1,500 units
-```
-
-Existing inventory and incoming purchase orders are considered.
-
-Seeded scenario:
-
-```text
-Current inventory = 300
-Existing PO = 300
-New forecast = 1,500
-```
-
-Available supply:
-
-```text
-300 + 300
-= 600 units
-```
-
-Additional requirement:
-
-```text
-1,500 - 600
-= 900 units
-```
-
-The agent selects a feasible supplier purchase.
-
-### Result
-
-```text
-Decision = MODIFY
-
-Available supply = 600
-Additional required = 900
-Purchase = 400
-Supplier = Supplier B
-Cost = ₹3,800
-Remaining shortfall = 500
-```
-
-The purchase is validated before execution.
-
----
-
-# 8. Scenario 4 — Purchasing Constraint
-
-The buyer recommends:
-
-```text
-800 units
-```
-
-but the purchasing constraints limit the feasible quantity.
-
-The scenario uses:
-
-```text
-Budget = ₹5,000
-Storage capacity = 1,200
-```
-
-Supplier A:
-
-```text
-Price = ₹10/unit
-Availability = 800
-```
-
-The budget allows:
-
-```text
-₹5,000 / ₹10
-= 500 units
-```
-
-Therefore the feasible purchase is:
-
-```text
-500 units
-```
-
-### Result
-
-```text
-Decision = MODIFY
-
-Original recommendation = 800
-Final purchase = 500
-Supplier = Supplier A
-Cost = ₹5,000
-Remaining shortfall = 300
-```
-
----
-
-# 9. Deterministic Validation
-
-The LLM is not trusted to enforce operational or financial constraints.
+The LLM is not trusted to enforce financial or operational constraints.
 
 Validation is implemented in:
 
@@ -452,7 +260,7 @@ Validation is implemented in:
 backend/app/services/validation.py
 ```
 
-Four primary checks are performed.
+The validator performs four primary checks.
 
 ## Minimum Order Quantity
 
@@ -482,15 +290,24 @@ quantity × unit_price
 <= available_budget
 ```
 
-The final action can only execute after validation succeeds.
+The validation result contains information such as:
+
+```text
+valid
+checks
+total_cost
+available_budget
+failed_checks
+reason
+```
+
+Only actions that pass the validation workflow can proceed to execution.
 
 ---
 
-# 10. Recovery
+# 5. Recovery
 
 When a proposed action fails validation, the agent attempts to find a feasible alternative.
-
-Conceptually:
 
 ```text
 Proposed Action
@@ -519,11 +336,13 @@ The recovery logic considers:
 
 For each supplier, the system calculates the maximum feasible quantity.
 
-A supplier is excluded when the feasible quantity cannot satisfy the supplier's MOQ.
+Suppliers are excluded when the feasible quantity cannot satisfy their MOQ.
+
+Recovery allows the system to partially satisfy a requirement when the complete recommendation cannot be executed.
 
 ---
 
-# 11. Revalidation
+# 6. Revalidation
 
 Recovered actions are never trusted automatically.
 
@@ -531,71 +350,48 @@ For example:
 
 ```text
 Initial action:
-
 600 units
 
 Validation:
-
 FAIL
 
 Recovery:
-
 500 units
 
 Revalidation:
-
 PASS
 
 Execution:
-
 500 units
 ```
 
-This ensures that recovery cannot bypass the application's purchasing constraints.
+Because recovery changes the purchasing action, the new action must pass the same deterministic constraints again.
 
----
-
-# 12. LLM Responsibility
-
-Groq is used for the reasoning layer.
-
-The LLM can:
-
-* Interpret procurement context
-* Compare purchasing options
-* Determine whether a recommendation should be accepted or modified
-* Explain the decision
-* Identify risks
-
-The LLM cannot directly:
-
-* Create purchase orders
-* Bypass budget validation
-* Bypass MOQ
-* Bypass supplier capacity
-* Bypass storage constraints
-
-The architecture therefore separates:
+This creates the safety boundary:
 
 ```text
-LLM = Reasoning
-
-Application Code = Validation
-
-Database Service = Execution
+LLM Reasoning
+      ↓
+Proposed Action
+      ↓
+Deterministic Validation
+      ↓
+Recovery if necessary
+      ↓
+Revalidation
+      ↓
+Execution
 ```
 
 ---
 
-# 13. Execution Boundary
+# 7. Execution Boundary
 
 Purchase orders are created by:
 
 ```text
 backend/app/services/purchasing.py
 ```
-
-The execution service performs the database mutation.
 
 The LLM never directly writes to SQLite.
 
@@ -613,15 +409,318 @@ Revalidation
 Purchase Order Creation
 ```
 
+The execution service performs the database mutation and creates the purchase-order record.
+
 ---
 
-# 14. Human Approval
+# Scenarios
 
-The current prototype does not implement a separate human approval queue or approval UI.
+The frontend provides four purchasing scenarios.
 
-Instead, it uses deterministic validation as the execution safety boundary.
+---
 
-Only actions that pass the validation workflow are executed.
+## Scenario 1 — Purchase Recommendation Review
+
+The buyer receives a recommendation to purchase:
+
+```text
+800 units
+```
+
+The agent investigates:
+
+```text
+Current inventory = 300
+Expected daily demand = 100
+Forecast period = 10 days
+Required demand = 1000
+Existing incoming PO = 100
+Budget = ₹5,000
+Storage capacity = 1,200
+```
+
+### Supplier A
+
+```text
+MOQ = 100
+Price = ₹10
+Availability = 800
+Lead time = 3 days
+Reliability = 0.95
+```
+
+### Supplier B
+
+```text
+MOQ = 200
+Price = ₹9.50
+Availability = 400
+Lead time = 5 days
+Reliability = 0.87
+```
+
+### Requirement
+
+```text
+1000 - 300 - 100
+= 600 units
+```
+
+The initial purchase would cost:
+
+```text
+600 × ₹10
+= ₹6,000
+```
+
+Available budget:
+
+```text
+₹5,000
+```
+
+Therefore:
+
+```text
+₹6,000 > ₹5,000
+```
+
+The proposed action fails budget validation.
+
+### Recovery
+
+The recovery stage calculates:
+
+```text
+₹5,000 / ₹10
+= 500 units
+```
+
+The recovered action is:
+
+```text
+500 units from Supplier A
+```
+
+The recovered action passes validation.
+
+### Result
+
+```text
+Decision = MODIFY
+Original recommendation = 800
+Required additional = 600
+Final purchase = 500
+Remaining shortfall = 100
+Total cost = ₹5,000
+Supplier = Supplier A
+```
+
+---
+
+## Scenario 2 — Supplier Cannot Fulfil Purchase
+
+The original purchase order requests:
+
+```text
+500 units
+```
+
+The original supplier can provide only:
+
+```text
+250 units
+```
+
+The uncovered quantity is:
+
+```text
+500 - 250
+= 250 units
+```
+
+The agent identifies another supplier that can provide the remaining quantity.
+
+### Result
+
+```text
+Decision = MODIFY
+Original PO = 500
+Original supplier availability = 250
+Alternate supplier quantity = 250
+Supplier = Supplier B
+Cost = ₹2,375
+```
+
+The alternate purchase is validated before execution.
+
+---
+
+## Scenario 3 — Demand / Forecast Changed
+
+The original forecast is:
+
+```text
+1,000 units
+```
+
+The updated forecast becomes:
+
+```text
+1,500 units
+```
+
+Seeded scenario:
+
+```text
+Current inventory = 300
+Existing PO = 300
+New forecast = 1,500
+```
+
+Available supply:
+
+```text
+300 + 300
+= 600 units
+```
+
+Additional requirement:
+
+```text
+1,500 - 600
+= 900 units
+```
+
+The agent selects a feasible supplier purchase based on the available constraints.
+
+### Result
+
+```text
+Decision = MODIFY
+Available supply = 600
+Additional required = 900
+Purchase = 400
+Supplier = Supplier B
+Cost = ₹3,800
+Remaining shortfall = 500
+```
+
+The purchase is validated before execution.
+
+---
+
+## Scenario 4 — Purchasing Constraint
+
+The buyer recommends:
+
+```text
+800 units
+```
+
+The scenario includes:
+
+```text
+Budget = ₹5,000
+Storage capacity = 1,200
+```
+
+Supplier A:
+
+```text
+Price = ₹10/unit
+Availability = 800
+```
+
+The budget allows:
+
+```text
+₹5,000 / ₹10
+= 500 units
+```
+
+Therefore:
+
+```text
+Feasible purchase = 500 units
+```
+
+### Result
+
+```text
+Decision = MODIFY
+Original recommendation = 800
+Final purchase = 500
+Supplier = Supplier A
+Cost = ₹5,000
+Remaining shortfall = 300
+```
+
+---
+
+# LLM vs Deterministic Logic
+
+The central architectural decision is to separate **reasoning from execution**.
+
+### LLM responsibilities
+
+The LLM handles:
+
+```text
+Context interpretation
+Decision reasoning
+Supplier comparison
+Explanation
+Risk identification
+```
+
+### Application responsibilities
+
+Deterministic application code handles:
+
+```text
+Budget enforcement
+MOQ enforcement
+Supplier capacity
+Storage limits
+Database mutation
+```
+
+Therefore:
+
+```text
+             LLM
+              │
+              ▼
+        Proposed Action
+              │
+              ▼
+   Deterministic Validation
+              │
+        ┌─────┴─────┐
+        │           │
+       FAIL        PASS
+        │           │
+        ▼           │
+    Recovery        │
+        │           │
+        ▼           │
+   Revalidation     │
+        │           │
+        └─────┬─────┘
+              ▼
+          Execution
+```
+
+This prevents an invalid LLM recommendation from directly mutating procurement data.
+
+---
+
+# Human Approval
+
+The current prototype does **not** implement a separate human approval queue or approval UI.
+
+Instead, deterministic validation acts as the execution safety boundary.
 
 For a production system, human approval could be required for:
 
@@ -643,19 +742,16 @@ Approval Policy
       ├── Low Risk → Execute
       │
       └── High Risk → Human Approval
-                              ↓
-                           Execute
+                            ↓
+                          Execute
 ```
 
 ---
 
-# 15. Project Structure
+# Project Structure
 
 ```text
 ai-purchasing-agent/
-
-│
-├── .vscode/
 │
 ├── backend/
 │   ├── app/
@@ -680,7 +776,6 @@ ai-purchasing-agent/
 │   │   └── schemas.py
 │   │
 │   ├── .env.example
-│   ├── purchasing.db
 │   └── seed.py
 │
 ├── frontend/
@@ -707,26 +802,26 @@ ai-purchasing-agent/
 └── architecture.md
 ```
 
-The SQLite database used by the application is:
+The SQLite database is generated locally at:
 
 ```text
 backend/purchasing.db
 ```
 
-It is ignored by Git and is generated/seeded locally.
+It is ignored by Git and recreated through the seed script.
 
 ---
 
-# 16. Technology Stack
+# Technology Stack
 
-## Frontend
+### Frontend
 
 * React
 * Vite
 * JavaScript
 * CSS
 
-## Backend
+### Backend
 
 * Python
 * FastAPI
@@ -734,18 +829,18 @@ It is ignored by Git and is generated/seeded locally.
 * SQLAlchemy
 * SQLite
 
-## Agent
+### Agent
 
 * LangGraph
 * Groq LLM
 
-## Testing
+### Testing
 
 * pytest
 
 ---
 
-# 17. Setup
+# Setup
 
 ## Prerequisites
 
@@ -759,17 +854,16 @@ Install:
 
 ---
 
-# 18. Clone the Repository
+## Clone the Repository
 
 ```bash
 git clone https://github.com/DevangM03/ai-purchasing-agent.git
-
 cd ai-purchasing-agent
 ```
 
 ---
 
-# 19. Backend Setup
+## Backend Setup
 
 Create and activate a virtual environment.
 
@@ -777,7 +871,6 @@ Create and activate a virtual environment.
 
 ```powershell
 python -m venv venv
-
 .\venv\Scripts\Activate.ps1
 ```
 
@@ -789,7 +882,7 @@ pip install -r backend\requirements.txt
 
 ---
 
-# 20. Environment Configuration
+# Environment Configuration
 
 Create:
 
@@ -823,7 +916,7 @@ If an API key is accidentally exposed, revoke it and replace it immediately.
 
 ---
 
-# 21. Seed the Database
+# Seed the Database
 
 From the project root:
 
@@ -831,7 +924,7 @@ From the project root:
 python backend\seed.py
 ```
 
-The seeded database will be located at:
+The seeded database is created at:
 
 ```text
 backend/purchasing.db
@@ -846,7 +939,7 @@ The seed data contains:
 
 ---
 
-# 22. Start the Backend
+# Start the Backend
 
 From the project root:
 
@@ -862,7 +955,7 @@ http://localhost:8000
 
 Health check:
 
-```text
+```http
 GET /health
 ```
 
@@ -876,15 +969,13 @@ Expected response:
 
 ---
 
-# 23. Start the Frontend
+# Start the Frontend
 
 Open another terminal:
 
 ```powershell
 cd frontend
-
 npm install
-
 npm run dev
 ```
 
@@ -896,7 +987,7 @@ http://localhost:5173
 
 ---
 
-# 24. Running the Demonstration
+# Running the Demonstration
 
 1. Start the backend.
 2. Start the frontend.
@@ -911,18 +1002,20 @@ http://localhost:5173
 6. Submit the recommendation.
 7. Review:
 
-   * Decision
-   * Quantity
-   * Supplier
-   * Reasoning
-   * Risk
-   * Validation
-   * Recovery
-   * Execution result
+```text
+Decision
+Quantity
+Supplier
+Reasoning
+Risk
+Validation
+Recovery
+Execution result
+```
 
 ---
 
-# 25. Resetting the Database
+# Resetting the Database
 
 To reset the demonstration data:
 
@@ -936,7 +1029,7 @@ The primary scenario can then be run again from a clean database.
 
 ---
 
-# 26. API
+# API
 
 ## Purchase Review
 
@@ -944,7 +1037,7 @@ The primary scenario can then be run again from a clean database.
 POST /api/purchase/review
 ```
 
-Example:
+Example request:
 
 ```json
 {
@@ -967,7 +1060,7 @@ action
 
 ---
 
-# 27. Testing
+# Testing
 
 The project includes automated tests for the deterministic purchasing validator.
 
@@ -991,11 +1084,11 @@ The tests cover:
 * Budget failure
 * Supplier-capacity failure
 
-The tests intentionally focus on the deterministic safety boundary because that is the most critical component between agent reasoning and purchase execution.
+The tests intentionally focus on the deterministic safety boundary because it is the critical component between agent reasoning and purchase execution.
 
 ---
 
-# 28. Manual Scenario Evaluation
+# Manual Scenario Evaluation
 
 All four scenarios have been manually verified against the seeded database.
 
@@ -1006,33 +1099,30 @@ All four scenarios have been manually verified against the seeded database.
 | Demand / Forecast Changed | PASS   | 400 units from Supplier B |
 | Purchasing Constraint     | PASS   | 500 units from Supplier A |
 
-### Scenario 1
+### Recommendation Review
 
 ```text
 Decision: MODIFY
-
 Required additional: 600
 Purchase: 500
 Cost: ₹5,000
 Shortfall: 100
 ```
 
-### Scenario 2
+### Supplier Cannot Fulfil
 
 ```text
 Decision: MODIFY
-
 Uncovered quantity: 250
 Alternate supplier: Supplier B
 Purchase: 250
 Cost: ₹2,375
 ```
 
-### Scenario 3
+### Demand / Forecast Changed
 
 ```text
 Decision: MODIFY
-
 Available supply: 600
 Additional required: 900
 Purchase: 400
@@ -1040,11 +1130,10 @@ Cost: ₹3,800
 Shortfall: 500
 ```
 
-### Scenario 4
+### Purchasing Constraint
 
 ```text
 Decision: MODIFY
-
 Recommendation: 800
 Purchase: 500
 Cost: ₹5,000
@@ -1053,7 +1142,7 @@ Shortfall: 300
 
 ---
 
-# 29. Mock Procurement Data
+# Mock Procurement Data
 
 The seeded product is:
 
@@ -1113,7 +1202,7 @@ Supplier: Supplier A
 
 ---
 
-# 30. Design Principles
+# Design Principles
 
 ### LLM for reasoning
 
@@ -1137,7 +1226,14 @@ Database operations are separated from the agent workflow.
 
 ### Explainability
 
-The final response exposes decision, reasoning, validation, recovery, risk, and execution information.
+The final response exposes:
+
+* Decision
+* Reasoning
+* Validation
+* Recovery
+* Risk
+* Execution
 
 ### Reproducibility
 
@@ -1145,7 +1241,7 @@ Seeded SQLite data allows the workflow to be reproduced locally.
 
 ---
 
-# 31. Current Limitations
+# Current Limitations
 
 This is a prototype focused on demonstrating the purchasing-agent workflow.
 
@@ -1168,7 +1264,7 @@ The current implementation intentionally prioritizes a reliable end-to-end workf
 
 ---
 
-# 32. Future Improvements
+# Future Improvements
 
 Potential production improvements include:
 
@@ -1213,7 +1309,7 @@ Connect the demand-analysis workflow to real forecasting systems.
 
 ---
 
-# 33. Security
+# Security
 
 Never commit:
 
@@ -1237,7 +1333,7 @@ If an API key is accidentally exposed, it should be revoked and replaced immedia
 
 ---
 
-# 34. Why This Architecture?
+# Why This Architecture?
 
 The central design decision is to separate **reasoning from execution**.
 
@@ -1245,13 +1341,9 @@ An LLM is useful for:
 
 ```text
 Context interpretation
-
 Decision reasoning
-
 Supplier comparison
-
 Explanation
-
 Risk identification
 ```
 
@@ -1259,13 +1351,9 @@ Deterministic application code is better suited for:
 
 ```text
 Budget enforcement
-
 MOQ enforcement
-
 Supplier capacity
-
 Storage limits
-
 Database mutation
 ```
 
@@ -1280,17 +1368,17 @@ Therefore:
               ▼
     Deterministic Validation
               │
-       ┌──────┴──────┐
-       │             │
-      FAIL          PASS
-       │             │
-       ▼             │
-    Recovery         │
-       │             │
-       ▼             │
-  Revalidation       │
-       │             │
-       └──────┬──────┘
+        ┌─────┴─────┐
+        │           │
+       FAIL        PASS
+        │           │
+        ▼           │
+    Recovery        │
+        │           │
+        ▼           │
+   Revalidation     │
+        │           │
+        └─────┬─────┘
               ▼
           Execution
 ```
@@ -1299,9 +1387,29 @@ This prevents an invalid LLM recommendation from directly mutating procurement d
 
 ---
 
-# 35. Conclusion
+# Documentation
 
-The AI Purchasing Agent demonstrates a complete procurement decision workflow where:
+For a deeper technical explanation of the implementation, see:
+
+**[`architecture.md`](architecture.md)**
+
+It contains the detailed:
+
+* Agent architecture
+* LangGraph node behavior
+* Service architecture
+* Database relationships
+* Request/response flow
+* Recovery design
+* Revalidation design
+* Production evolution
+* Architectural principles
+
+---
+
+# Conclusion
+
+The AI Purchasing Agent demonstrates a complete procurement decision workflow:
 
 ```text
 Investigate
@@ -1321,6 +1429,6 @@ Execute
 Explain Result
 ```
 
-The project demonstrates how LLM reasoning can be combined with deterministic business rules to create a safer and more explainable purchasing workflow.
+The project demonstrates how LLM reasoning can be combined with deterministic business rules to create a more controlled and explainable purchasing workflow.
 
 The implementation intentionally focuses on a small but complete end-to-end system rather than attempting to build a full enterprise procurement platform.
